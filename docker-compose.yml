@@ -22,8 +22,8 @@ services:
   postgres:
     image: postgres:13
     environment:
-      POSTGRES_DB: fixtrades
-      POSTGRES_USER: fixuser
-      POSTGRES_PASSWORD: fixpass
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
