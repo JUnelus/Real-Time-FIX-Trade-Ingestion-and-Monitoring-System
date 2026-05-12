@@ -1,0 +1,179 @@
+name: Daily Dashboard Screenshot Update
+
+# Run daily at 9:30 AM UTC (after messages are generated)
+on:
+  schedule:
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-dashboard-screenshot:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_DB: fixdb
+          POSTGRES_USER: fixuser
+          POSTGRES_PASSWORD: fixpass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install chromium
+
+      - name: Create .env file
+        run: |
+          echo "POSTGRES_DB=fixdb" > .env
+          echo "POSTGRES_USER=fixuser" >> .env
+          echo "POSTGRES_PASSWORD=fixpass" >> .env
+          echo "POSTGRES_HOST=localhost" >> .env
+
+      - name: Initialize database
+        run: |
+          python -c "
+          import psycopg2
+          import time
+          
+          # Wait for postgres to be ready
+          time.sleep(2)
+          
+          try:
+              conn = psycopg2.connect(
+                  dbname='fixdb',
+                  user='fixuser',
+                  password='fixpass',
+                  host='localhost'
+              )
+              cur = conn.cursor()
+              
+              # Create trades table
+              cur.execute('''
+              CREATE TABLE IF NOT EXISTS trades (
+                  id SERIAL PRIMARY KEY,
+                  clordid TEXT,
+                  symbol TEXT,
+                  side TEXT,
+                  qty NUMERIC,
+                  price NUMERIC,
+                  raw TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+              )
+              ''')
+              
+              conn.commit()
+              cur.close()
+              conn.close()
+              print('Database initialized successfully')
+          except Exception as e:
+              print(f'Database init error: {e}')
+          "
+
+      - name: Seed sample data
+        run: |
+          python -c "
+          import psycopg2
+          from datetime import datetime
+          import random
+          
+          conn = psycopg2.connect(
+              dbname='fixdb',
+              user='fixuser',
+              password='fixpass',
+              host='localhost'
+          )
+          cur = conn.cursor()
+          
+          # Sample data: top 5 crypto + top 5 stocks
+          symbols = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'XRP-USD', 'ADA-USD', 
+                     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA']
+          
+          for i in range(20):
+              symbol = random.choice(symbols)
+              clordid = f'ORD-{1000+i}'
+              side = random.choice(['1', '2'])
+              qty = random.choice([0.1, 10, 50, 100, 500])
+              price = random.uniform(10, 500)
+              
+              cur.execute(
+                  'INSERT INTO trades (clordid, symbol, side, qty, price, raw) VALUES (%s, %s, %s, %s, %s, %s)',
+                  (clordid, symbol, side, qty, price, f'FIX MESSAGE: {symbol}')
+              )
+          
+          conn.commit()
+          cur.close()
+          conn.close()
+          print(f'Seeded {20} sample trades')
+          "
+
+      - name: Start Streamlit and capture screenshot
+        run: |
+          # Start Streamlit in the background
+          streamlit run dashboard/streamlit_app.py --logger.level=error &
+          STREAMLIT_PID=$!
+          
+          # Wait for Streamlit to start
+          sleep 8
+          
+          # Capture screenshot using playwright
+          python -c "
+          from playwright.sync_api import sync_playwright
+          import time
+          
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page(viewport={'width': 1280, 'height': 720})
+              
+              try:
+                  page.goto('http://localhost:8501', wait_until='networkidle')
+                  time.sleep(3)
+                  
+                  # Capture full page
+                  page.screenshot(path='dashboard/img_updated.png', full_page=True)
+                  print('Screenshot captured successfully')
+              except Exception as e:
+                  print(f'Screenshot error: {e}')
+              finally:
+                  browser.close()
+          "
+          
+          # Kill Streamlit process
+          kill $STREAMLIT_PID 2>/dev/null || true
+        continue-on-error: true
+
+      - name: Replace screenshot if successful
+        run: |
+          if [ -f "dashboard/img_updated.png" ]; then
+            mv dashboard/img_updated.png dashboard/img.png
+            echo "✅ Screenshot updated successfully"
+          else
+            echo "⚠️ Screenshot capture failed, keeping existing image"
+          fi
+
+      - name: Commit changes
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "GitHub Actions Bot"
+          git add dashboard/img.png
+          git commit -m "chore: update dashboard screenshot $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          git push || echo "No changes to push"
+

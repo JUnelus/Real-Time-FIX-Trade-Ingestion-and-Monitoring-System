@@ -4,3 +4,6 @@ streamlit
 python-dotenv
 fixparser
 websocket-client
+requests
+yfinance
+pandas
