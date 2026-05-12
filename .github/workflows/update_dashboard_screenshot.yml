@@ -1,5 +1,8 @@
 name: On-Demand Dashboard Screenshot Refresh
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 on:
   workflow_dispatch:
 
@@ -17,7 +20,7 @@ jobs:
           POSTGRES_USER: fixuser
           POSTGRES_PASSWORD: fixpass
         options: >-
-          --health-cmd pg_isready -U fixuser -d fixdb
+          --health-cmd="pg_isready -U fixuser -d fixdb"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

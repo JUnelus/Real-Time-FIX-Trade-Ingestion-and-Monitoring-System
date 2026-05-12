@@ -1,5 +1,8 @@
 name: Daily FIX Producer - Top 5 Crypto & Stocks
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 # Run daily at 9 AM UTC
 on:
   push:
@@ -70,7 +73,7 @@ jobs:
           POSTGRES_USER: fixuser
           POSTGRES_PASSWORD: fixpass
         options: >-
-          --health-cmd pg_isready -U fixuser -d fixdb
+          --health-cmd="pg_isready -U fixuser -d fixdb"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

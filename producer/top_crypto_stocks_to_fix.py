@@ -102,15 +102,18 @@ def get_top_stocks(limit: int = 5) -> List[Dict]:
 
     try:
         # Popular large-cap stocks
-        stock_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'BRK.B', 'NVDA', 'TSLA', 'JNJ', 'V', 'WMT']
+        stock_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'BRK-B', 'NVDA', 'TSLA', 'JNJ', 'V', 'WMT']
 
         stocks = []
-        for symbol in stock_symbols[:limit]:
+        for symbol in stock_symbols:
+            if len(stocks) >= limit:
+                break
             try:
                 ticker = yf.Ticker(symbol)
                 data = ticker.history(period='1d')
 
                 if data.empty:
+                    logger.warning(f"No price data returned for stock {symbol}")
                     continue
 
                 current_price = data['Close'].iloc[-1]
@@ -125,6 +128,9 @@ def get_top_stocks(limit: int = 5) -> List[Dict]:
             except Exception as e:
                 logger.warning(f"Error fetching stock {symbol}: {e}")
                 continue
+
+        if len(stocks) < limit:
+            logger.warning(f"Requested {limit} stocks but only fetched {len(stocks)} valid symbols")
 
         logger.info(f"Fetched {len(stocks)} stocks")
         return stocks
