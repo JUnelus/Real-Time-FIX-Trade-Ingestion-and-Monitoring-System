@@ -153,6 +153,31 @@ jobs:
             echo "⚠️ Screenshot capture failed, keeping existing image"
           fi
 
+      - name: Update README screenshot cache key
+        run: |
+          python - <<'PY'
+          import hashlib
+          import re
+          from pathlib import Path
+
+          image_path = Path("dashboard/img.png")
+          readme_path = Path("README.md")
+
+          digest = hashlib.sha256(image_path.read_bytes()).hexdigest()[:12]
+          content = readme_path.read_text(encoding="utf-8")
+          updated = re.sub(
+              r"!\[img\.png\]\(dashboard/img\.png(?:\?v=[^)]*)?\)",
+              f"![img.png](dashboard/img.png?v={digest})",
+              content,
+          )
+
+          if updated != content:
+              readme_path.write_text(updated, encoding="utf-8")
+              print(f"Updated README screenshot cache key to {digest}")
+          else:
+              print("README screenshot reference already up to date")
+          PY
+
       - name: Upload dashboard assets
         uses: actions/upload-artifact@v4
         with:
@@ -166,7 +191,7 @@ jobs:
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions Bot"
-          git add docs/daily_reports/ dashboard/img.png
+          git add docs/daily_reports/ dashboard/img.png README.md
           git diff --cached --quiet && echo "No daily artifacts changed" && exit 0
           git commit -m "docs: update daily FIX report and dashboard screenshot $(date -u +%Y-%m-%d) [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
