@@ -34,6 +34,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def to_fix(fix_dict: Dict) -> str:
     """
     Convert dictionary to FIX message format.
@@ -239,8 +246,11 @@ def main():
         logger.info(f"Message {i}: {msg[:100]}...")
 
     # Try to send to Kafka if available
-    bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
-    send_to_kafka(messages, bootstrap_servers)
+    if env_flag('SKIP_KAFKA', default=False):
+        logger.info("Skipping Kafka publish because SKIP_KAFKA is enabled")
+    else:
+        bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
+        send_to_kafka(messages, bootstrap_servers)
 
     # Always save to file
     save_to_file(messages)

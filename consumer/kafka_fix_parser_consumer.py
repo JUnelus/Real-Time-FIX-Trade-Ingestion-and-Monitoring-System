@@ -10,7 +10,7 @@ load_dotenv()
 
 consumer = KafkaConsumer(
     'fix-trades',
-    bootstrap_servers='localhost:9092',
+    bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092'),
     auto_offset_reset='earliest',
     value_deserializer=lambda x: x
 )
@@ -20,7 +20,7 @@ conn = psycopg2.connect(
     dbname=os.getenv('POSTGRES_DB'),
     user=os.getenv('POSTGRES_USER'),
     password=os.getenv('POSTGRES_PASSWORD'),
-    host="localhost"
+    host=os.getenv('POSTGRES_HOST', 'localhost')
 )
 cur = conn.cursor()
 
@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS trades (
     side TEXT,
     qty NUMERIC,
     price NUMERIC,
-    raw TEXT
+    raw TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
 conn.commit()

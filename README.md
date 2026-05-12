@@ -93,8 +93,8 @@ Visit [http://localhost:8501](http://localhost:8501) to view the dashboard.
 - `parser/fix_parser.py` – Core FIX parsing logic
 - `dashboard/streamlit_app.py` – Real-time monitoring UI
 - `docker-compose.yml` – Spins up Kafka, Zookeeper, and Postgres services
-- `.github/workflows/daily_fix_producer.yml` – **NEW** Automated daily FIX producer workflow
-- `.github/workflows/update_dashboard_screenshot.yml` – **NEW** Automated dashboard screenshot update workflow
+- `.github/workflows/daily_fix_producer.yml` – **NEW** Primary workflow: validates on push, runs daily, produces FIX data, updates dashboard screenshot, and commits artifacts
+- `.github/workflows/update_dashboard_screenshot.yml` – **NEW** On-demand screenshot refresh workflow for manual recovery/regeneration
 
 ---
 
@@ -117,8 +117,8 @@ Visit [http://localhost:8501](http://localhost:8501) to view the dashboard.
 1. Navigate to your GitHub repository
 2. Click **Actions** tab
 3. Select the workflow:
-   - **Daily FIX Producer** - Check for daily execution
-   - **Daily Dashboard Screenshot Update** - View latest screenshot updates
+   - **Daily FIX Producer** - Check push validation, daily execution, and dashboard/report updates
+   - **On-Demand Dashboard Screenshot Refresh** - Manually regenerate the dashboard screenshot if needed
 
 ### Manual Trigger
 
@@ -195,20 +195,22 @@ streamlit run dashboard/streamlit_app.py
 
 ### Overview
 
-The system now includes automated GitHub Actions that run on a daily schedule:
+The system now includes an automated primary workflow plus an on-demand recovery workflow:
 
-1. **Daily FIX Producer Action** - Runs at 9:00 AM UTC
+1. **Daily FIX Producer Action** - Runs on every push, manual dispatch, and daily at 9:00 AM UTC
    - Fetches top 5 cryptocurrencies by market cap from CoinGecko API
    - Fetches top 5 stocks by market cap using yfinance
    - Converts all data to FIX ExecutionReport messages (MsgType=8)
-   - Sends messages to Kafka or saves to JSON file
-   - Generates daily reports and artifacts
+   - Saves the real FIX output to `daily_fix_messages.json`
+   - Uploads that file as a workflow artifact
+   - Loads that same artifact into Postgres for the dashboard screenshot job
+   - Commits the daily JSON report and updated screenshot back to the repository
 
-2. **Dashboard Screenshot Update Action** - Runs at 9:30 AM UTC
-   - Spins up PostgreSQL database with sample trade data
-   - Runs Streamlit dashboard
-   - Captures automated screenshot of the dashboard
-   - Commits updated screenshot to repository (![img.png](dashboard/img.png))
+2. **On-Demand Dashboard Screenshot Refresh** - Runs manually via `workflow_dispatch`
+   - Regenerates the latest FIX messages locally
+   - Loads those messages into Postgres using the same helper scripts as the primary workflow
+   - Runs Streamlit dashboard and captures a fresh screenshot
+   - Commits the updated screenshot when needed
 
 ### How the Daily Producer Works
 
@@ -265,7 +267,7 @@ This generates a `daily_fix_messages.json` file with all FIX messages.
 
 #### File: `.github/workflows/daily_fix_producer.yml`
 
-**Trigger:** Daily at 9:00 AM UTC (or manual via workflow_dispatch)
+**Trigger:** On every push, daily at 9:00 AM UTC, or manual via `workflow_dispatch`
 
 **Steps:**
 1. Check out code
@@ -274,12 +276,16 @@ This generates a `daily_fix_messages.json` file with all FIX messages.
 4. Run top_crypto_stocks_to_fix.py producer
 5. Upload artifacts (daily_fix_messages.json)
 6. Generate summary report
+7. Start a second job that downloads the artifact
+8. Load the artifact into Postgres
+9. Capture the dashboard screenshot from the real producer output
+10. Commit the daily report JSON and screenshot
 
 **Artifacts:** Available for 30 days
 
 #### File: `.github/workflows/update_dashboard_screenshot.yml`
 
-**Trigger:** Daily at 9:30 AM UTC (or manual via workflow_dispatch)
+**Trigger:** Manual via `workflow_dispatch`
 
 **Services:**
 - PostgreSQL 13 (auto-initialized)
@@ -288,12 +294,13 @@ This generates a `daily_fix_messages.json` file with all FIX messages.
 1. Check out code
 2. Set up Python 3.11
 3. Install dependencies + Playwright
-4. Initialize database with schema
-5. Seed sample trade data
-6. Start Streamlit dashboard
-7. Capture screenshot using Playwright
-8. Replace dashboard/img.png
-9. Commit and push changes
+4. Generate `daily_fix_messages.json`
+5. Initialize database with schema
+6. Load the generated FIX messages into Postgres
+7. Start Streamlit dashboard
+8. Capture screenshot using Playwright
+9. Replace dashboard/img.png
+10. Commit and push changes
 
 ---
 

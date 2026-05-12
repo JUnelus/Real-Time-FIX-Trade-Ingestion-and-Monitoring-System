@@ -1,13 +1,12 @@
-name: Daily Dashboard Screenshot Update
+name: On-Demand Dashboard Screenshot Refresh
 
-# Run daily at 9:30 AM UTC (after messages are generated)
 on:
-  schedule:
-    - cron: '30 9 * * *'
   workflow_dispatch:
 
 jobs:
   update-dashboard-screenshot:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
 
     services:
@@ -18,7 +17,7 @@ jobs:
           POSTGRES_USER: fixuser
           POSTGRES_PASSWORD: fixpass
         options: >-
-          --health-cmd pg_isready
+          --health-cmd pg_isready -U fixuser -d fixdb
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -27,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -41,6 +40,11 @@ jobs:
           pip install playwright
           python -m playwright install chromium
 
+      - name: Generate FIX messages locally
+        run: python producer/top_crypto_stocks_to_fix.py
+        env:
+          SKIP_KAFKA: 'true'
+
       - name: Create .env file
         run: |
           echo "POSTGRES_DB=fixdb" > .env
@@ -49,81 +53,10 @@ jobs:
           echo "POSTGRES_HOST=localhost" >> .env
 
       - name: Initialize database
-        run: |
-          python -c "
-          import psycopg2
-          import time
-          
-          # Wait for postgres to be ready
-          time.sleep(2)
-          
-          try:
-              conn = psycopg2.connect(
-                  dbname='fixdb',
-                  user='fixuser',
-                  password='fixpass',
-                  host='localhost'
-              )
-              cur = conn.cursor()
-              
-              # Create trades table
-              cur.execute('''
-              CREATE TABLE IF NOT EXISTS trades (
-                  id SERIAL PRIMARY KEY,
-                  clordid TEXT,
-                  symbol TEXT,
-                  side TEXT,
-                  qty NUMERIC,
-                  price NUMERIC,
-                  raw TEXT,
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-              )
-              ''')
-              
-              conn.commit()
-              cur.close()
-              conn.close()
-              print('Database initialized successfully')
-          except Exception as e:
-              print(f'Database init error: {e}')
-          "
+        run: python scripts/init_trades_db.py
 
-      - name: Seed sample data
-        run: |
-          python -c "
-          import psycopg2
-          from datetime import datetime
-          import random
-          
-          conn = psycopg2.connect(
-              dbname='fixdb',
-              user='fixuser',
-              password='fixpass',
-              host='localhost'
-          )
-          cur = conn.cursor()
-          
-          # Sample data: top 5 crypto + top 5 stocks
-          symbols = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'XRP-USD', 'ADA-USD', 
-                     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA']
-          
-          for i in range(20):
-              symbol = random.choice(symbols)
-              clordid = f'ORD-{1000+i}'
-              side = random.choice(['1', '2'])
-              qty = random.choice([0.1, 10, 50, 100, 500])
-              price = random.uniform(10, 500)
-              
-              cur.execute(
-                  'INSERT INTO trades (clordid, symbol, side, qty, price, raw) VALUES (%s, %s, %s, %s, %s, %s)',
-                  (clordid, symbol, side, qty, price, f'FIX MESSAGE: {symbol}')
-              )
-          
-          conn.commit()
-          cur.close()
-          conn.close()
-          print(f'Seeded {20} sample trades')
-          "
+      - name: Load generated FIX messages into Postgres
+        run: python scripts/load_fix_messages_to_postgres.py daily_fix_messages.json --truncate
 
       - name: Start Streamlit and capture screenshot
         run: |
@@ -174,6 +107,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions Bot"
           git add dashboard/img.png
-          git commit -m "chore: update dashboard screenshot $(date -u +%Y-%m-%d)" || echo "No changes to commit"
-          git push || echo "No changes to push"
+          git diff --cached --quiet && echo "No screenshot changes to commit" && exit 0
+          git commit -m "chore: update dashboard screenshot $(date -u +%Y-%m-%d)"
+          git push origin HEAD:${{ github.ref_name }}
 

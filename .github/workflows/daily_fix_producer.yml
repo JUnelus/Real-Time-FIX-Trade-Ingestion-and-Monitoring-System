@@ -2,6 +2,7 @@ name: Daily FIX Producer - Top 5 Crypto & Stocks
 
 # Run daily at 9 AM UTC
 on:
+  push:
   schedule:
     - cron: '0 9 * * *'
   # Allow manual trigger
@@ -9,14 +10,17 @@ on:
 
 jobs:
   generate-fix-messages:
+    if: github.actor != 'github-actions[bot]'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -29,11 +33,10 @@ jobs:
         run: |
           python producer/top_crypto_stocks_to_fix.py
         env:
-          # Optional: Set Kafka servers if using external Kafka
-          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS || 'localhost:9092' }}
+          SKIP_KAFKA: 'true'
 
       - name: Upload FIX Messages
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: daily-fix-messages
           path: daily_fix_messages.json
@@ -47,36 +50,122 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f daily_fix_messages.json ]; then
             echo "✅ FIX messages generated successfully" >> $GITHUB_STEP_SUMMARY
-            echo "**Message Count:** $(cat daily_fix_messages.json | grep -o '\"count\":' | wc -l)" >> $GITHUB_STEP_SUMMARY
+            echo "**Message Count:** $(python -c 'import json; print(json.load(open("daily_fix_messages.json"))["count"])')" >> $GITHUB_STEP_SUMMARY
           else
             echo "⚠️ No FIX messages file found" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # Optional: Push results back to repository
-  commit-report:
+  update-dashboard-and-report:
     needs: generate-fix-messages
+    if: github.actor != 'github-actions[bot]' && needs.generate-fix-messages.result == 'success'
     runs-on: ubuntu-latest
-    if: always()
+    permissions:
+      contents: write
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_DB: fixdb
+          POSTGRES_USER: fixuser
+          POSTGRES_PASSWORD: fixpass
+        options: >-
+          --health-cmd pg_isready -U fixuser -d fixdb
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install chromium
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: daily-fix-messages
+          path: artifacts
 
-      - name: Copy to docs
+      - name: Create .env file
+        run: |
+          echo "POSTGRES_DB=fixdb" > .env
+          echo "POSTGRES_USER=fixuser" >> .env
+          echo "POSTGRES_PASSWORD=fixpass" >> .env
+          echo "POSTGRES_HOST=localhost" >> .env
+
+      - name: Initialize database
+        run: python scripts/init_trades_db.py
+
+      - name: Load producer artifact into Postgres
+        run: python scripts/load_fix_messages_to_postgres.py artifacts/daily_fix_messages.json --truncate
+
+      - name: Archive daily report in docs
         run: |
           mkdir -p docs/daily_reports
-          cp daily_fix_messages.json docs/daily_reports/fix_messages_$(date -u +%Y-%m-%d).json 2>/dev/null || true
+          cp artifacts/daily_fix_messages.json docs/daily_reports/fix_messages_$(date -u +%Y-%m-%d).json
 
-      - name: Commit and push
+      - name: Start Streamlit and capture screenshot
+        run: |
+          streamlit run dashboard/streamlit_app.py --logger.level=error &
+          STREAMLIT_PID=$!
+          sleep 8
+
+          python -c "
+          from playwright.sync_api import sync_playwright
+          import time
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page(viewport={'width': 1280, 'height': 720})
+              try:
+                  page.goto('http://localhost:8501', wait_until='networkidle')
+                  time.sleep(3)
+                  page.screenshot(path='dashboard/img_updated.png', full_page=True)
+                  print('Screenshot captured successfully')
+              finally:
+                  browser.close()
+          "
+
+          kill $STREAMLIT_PID 2>/dev/null || true
+
+      - name: Replace screenshot if successful
+        run: |
+          if [ -f "dashboard/img_updated.png" ]; then
+            mv dashboard/img_updated.png dashboard/img.png
+            echo "✅ Screenshot updated successfully"
+          else
+            echo "⚠️ Screenshot capture failed, keeping existing image"
+          fi
+
+      - name: Upload dashboard assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-dashboard-assets
+          path: |
+            docs/daily_reports/*.json
+            dashboard/img.png
+          retention-days: 30
+
+      - name: Commit report and screenshot
+        if: github.event_name != 'push'
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions Bot"
-          git add docs/daily_reports/ || true
-          git commit -m "docs: update daily FIX messages report $(date -u +%Y-%m-%d)" || true
-          git push || true
+          git add docs/daily_reports/ dashboard/img.png
+          git diff --cached --quiet && echo "No daily artifacts changed" && exit 0
+          git commit -m "docs: update daily FIX report and dashboard screenshot $(date -u +%Y-%m-%d)"
+          git push origin HEAD:${{ github.ref_name }}
 
