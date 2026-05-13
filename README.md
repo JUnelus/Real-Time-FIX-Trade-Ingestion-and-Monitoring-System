@@ -115,14 +115,14 @@ Visit [http://localhost:8501](http://localhost:8501) to view the dashboard.
 ### View Workflow Status
 
 1. Navigate to your GitHub repository
-2. Click **Actions** tab
+2. Click the **Actions** tab
 3. Select the workflow:
-   - **Daily FIX Producer** - Check push validation, daily execution, and dashboard/report updates
-   - **On-Demand Dashboard Screenshot Refresh** - Manually regenerate the dashboard screenshot if needed
+   - **Daily FIX Producer** – Check push validation, daily execution, and dashboard/report updates
+   - **On-Demand Dashboard Screenshot Refresh** – Manually regenerate the dashboard screenshot if needed
 
 ### Manual Trigger
 
-To run workflows immediately (instead of waiting for schedule):
+To run workflows immediately (instead of waiting for a schedule):
 
 ```bash
 # Via GitHub CLI
@@ -186,7 +186,7 @@ streamlit run dashboard/streamlit_app.py
 ### Daily Automated Execution (GitHub Actions)
 - No setup needed if you push to GitHub
 - Actions run automatically on schedule
-- Check Actions tab for status
+- Check the Actions tab for status
 - Download artifacts from workflow runs
 
 ---
@@ -197,7 +197,7 @@ streamlit run dashboard/streamlit_app.py
 
 The system now includes an automated primary workflow plus an on-demand recovery workflow:
 
-1. **Daily FIX Producer Action** - Runs on every push, manual dispatch, and daily at 9:00 AM UTC
+1. **Daily FIX Producer Action** – Runs on every push, manual dispatch, and daily at 9:00 AM UTC
    - Fetches top 5 cryptocurrencies by market cap from CoinGecko API
    - Fetches top 5 stocks by market cap using yfinance
    - Converts all data to FIX ExecutionReport messages (MsgType=8)
@@ -206,7 +206,7 @@ The system now includes an automated primary workflow plus an on-demand recovery
    - Loads that same artifact into Postgres for the dashboard screenshot job
    - Commits the daily JSON report and updated screenshot back to the repository
 
-2. **On-Demand Dashboard Screenshot Refresh** - Runs manually via `workflow_dispatch`
+2. **On-Demand Dashboard Screenshot Refresh** – Runs manually via `workflow_dispatch`
    - Regenerates the latest FIX messages locally
    - Loads those messages into Postgres using the same helper scripts as the primary workflow
    - Runs Streamlit dashboard and captures a fresh screenshot
@@ -275,7 +275,7 @@ This generates a `daily_fix_messages.json` file with all FIX messages.
 3. Install requirements
 4. Run top_crypto_stocks_to_fix.py producer
 5. Upload artifacts (daily_fix_messages.json)
-6. Generate summary report
+6. Generate the summary report
 7. Start a second job that downloads the artifact
 8. Load the artifact into Postgres
 9. Capture the dashboard screenshot from the real producer output
@@ -295,7 +295,7 @@ This generates a `daily_fix_messages.json` file with all FIX messages.
 2. Set up Python 3.11
 3. Install dependencies + Playwright
 4. Generate `daily_fix_messages.json`
-5. Initialize database with schema
+5. Initialize a database with schema
 6. Load the generated FIX messages into Postgres
 7. Start Streamlit dashboard
 8. Capture screenshot using Playwright
