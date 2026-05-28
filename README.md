@@ -310,7 +310,7 @@ This generates a `daily_fix_messages.json` file with all FIX messages.
 
 This screenshot is automatically captured at 9:30 AM UTC each day after the daily FIX producer fetches the latest top 5 cryptocurrencies and top 5 stocks. It displays the real-time trade monitoring dashboard with current market data.
 
-![img.png](dashboard/img.png?v=03d21855e31a)
+![img.png](dashboard/img.png?v=707858a40c03)
 
 **Last Updated:** Check the git commit history for the most recent update timestamp.
 
